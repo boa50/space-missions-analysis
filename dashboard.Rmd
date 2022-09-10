@@ -1,0 +1,177 @@
+---
+title: "Space Challenge"
+author: "(1957 - 2022)"
+output: 
+  flexdashboard::flex_dashboard:
+    vertical_layout: fill
+    css: styles.css
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(readr)
+library(dplyr)
+library(tidyr)
+library(scales)
+library(lubridate)
+library(stringi)
+library(ggplot2)
+```
+
+```{r reading data, include=FALSE}
+df <- read_csv("datasets/space_missions.csv")
+```
+
+```{r cleaning data, include=FALSE}
+df_lifetime <- df %>% 
+  select(Rocket, Date, MissionStatus) %>% 
+  group_by(Rocket) %>% 
+  summarise(first_launch = min(Date), last_launch = max(Date),
+            first_launch_year = year(first_launch),
+            lifetime = last_launch - first_launch,
+            lifetime_years = time_length(lifetime, "years"),
+            launch_group = ifelse(first_launch_year <= 1980, "le_1980", "gt_1980"),
+            n_launches = n())
+
+### Getting the lauching countries
+df_country <- df %>% 
+  mutate(location_rev = stri_reverse(stri_enc_toutf8(df$Location, validate = TRUE))) %>% 
+  separate(location_rev, c("country_rev", NA), sep = " ,", extra = "drop") %>% 
+  mutate(country_temp = stri_reverse(country_rev),
+         Country = ifelse(grepl("USSR", Company), "Russia + USSR", country_temp)) %>% 
+  select(Rocket, Country)
+
+### Countries with most launches
+df_country_launches <- df_country %>% 
+  group_by(Country) %>% 
+  summarise(launches = n())
+top_countries <- df_country_launches[order(df_country_launches$launches, decreasing = TRUE),]$Country[1:2]
+
+df_lifetime_top_countries <- df_lifetime %>% 
+  inner_join(distinct(df_country), by = "Rocket") %>% 
+  filter(Country %in% top_countries)
+```
+
+```{r getting stats, include=FALSE}
+stats_country <- df %>%
+  inner_join(distinct(df_country), by = "Rocket") %>%
+  filter(Country %in% top_countries) %>%
+  mutate(launch_year = year(Date),
+         launch_group = ifelse(launch_year <= 1980, "le_1980", "gt_1980")) %>%
+  group_by(Country, launch_group) %>%
+  summarise(success_rate = sum(MissionStatus == "Success") / n(),
+            launches = n()) %>% 
+  inner_join(
+    df_lifetime_top_countries %>% 
+      group_by(Country, launch_group) %>% 
+      summarise(grp.median = median(lifetime_years),
+                grp.rockets = n()),
+    by = c("Country", "launch_group")
+  )
+```
+
+```{r defining theme, include=FALSE}
+my_theme <- theme_classic() +
+    theme(plot.background = element_blank(),
+          panel.background = element_rect(fill = alpha("black", 0.9)),
+          axis.text = element_text(colour = "#b0bec5", size = rel(1.2)),
+          axis.line = element_line(colour = "#b0bec5"),
+          axis.title = element_text(color = "#b0bec5", size = 14),
+          axis.title.y = element_text(margin = margin(r = 15)),
+          axis.title.x = element_text(margin = margin(t = 15)),
+          plot.title = element_text(color = "white", size = 16),
+          plot.margin = margin(20,20,20,20))
+```
+
+```{r defining plots, include=FALSE}
+plot_rockets_lifetime <- function(dataset = df_lifetime_top_countries,
+                                  country_name, launch_group_name,
+                                  bar_color, 
+                                  stats = stats_country,
+                                  title = "") {
+  y_max <- 40
+  x_max <- 50
+  median_lifetime <- filter(stats, Country == country_name, launch_group == launch_group_name)$grp.median
+  rockets <- filter(stats, Country == country_name, launch_group == launch_group_name)$grp.rockets
+  success_rate <- filter(stats, Country == country_name, launch_group == launch_group_name)$success_rate * 100
+  
+  dataset %>% 
+    filter(Country == country_name & launch_group == launch_group_name) %>% 
+    ggplot(aes(x = lifetime_years)) +
+    geom_histogram(position = "identity", fill = bar_color, color = bar_color) +
+    ylim(NA, y_max) + xlim(NA, x_max) +
+    geom_vline(xintercept = median_lifetime, color = "#fbc02d", linetype = "dashed") +
+    annotate("text", x = median_lifetime+4, y = y_max/2,
+             label = paste(round(median_lifetime, 2),"years"),
+             color = "#fbc02d") +
+    annotate("text", x = x_max*0.85, y = y_max*0.85,
+             label = formatC(rockets, width = 2, format = "d", flag = "0"),
+             size = 9, color = alpha("white", 0.25)) +
+    annotate("text", x = x_max*0.95, y = y_max*0.83,
+             label = "rockets",
+             size = 4, color = alpha("white", 0.25))+
+    annotate("text", x = x_max*0.82, y = y_max*0.65,
+             label = paste(round(success_rate), "%", sep = ""),
+             size = 9, color = alpha("white", 0.25)) +
+    annotate("text", x = x_max*0.964, y = y_max*0.65,
+             label = "mission's\nsuccess",
+             size = 4, color = alpha("white", 0.25)) +
+    ggtitle(title) +
+    xlab("Rocket lifetime (in years)") +
+    ylab("Number of Rockets") +
+    my_theme
+}
+
+plot_shiny <- function(country, group, title_name, color_hex) {
+  renderPlot({
+    plot_rockets_lifetime(country_name = country, 
+                          launch_group_name = group,
+                          title = title_name,
+                          bar_color = color_hex)
+  }, bg="transparent")
+}
+
+russia_color <- "#6B6B6B"
+usa_color <- "#8292AC"
+
+russia_le_1980 <- plot_shiny("Russia + USSR", "le_1980", title_name = "Before 80s", color_hex = russia_color)
+russia_gt_1980 <- plot_shiny("Russia + USSR", "gt_1980", title_name = "After 80s", color_hex = russia_color)
+usa_le_1980 <- plot_shiny("USA", "le_1980", title_name = "Before 80s", color_hex = usa_color)
+usa_gt_1980 <- plot_shiny("USA", "gt_1980", title_name = "After 80s", color_hex = usa_color)
+```
+
+```{r}
+col_pad <- column(width = 1)
+
+fillCol(flex = c(3, 20, 1, 20, 1, 10),
+  fillRow(flex = c(2, 60, 3, 60, 2), 
+    col_pad, 
+    div(class = "subtitle",
+      span(
+        class = "shiny-text-output shiny-bound-output",
+        "Russia"
+      ),
+      span(class = "sub-subtitle",
+        "(+ USSR)"
+      )
+      ),
+    col_pad, renderText({ "USA" }), col_pad),
+  fillRow(flex = c(2, 60, 3, 60, 2), 
+          col_pad, russia_le_1980, col_pad, usa_le_1980, col_pad),
+  fillRow(),
+  fillRow(flex = c(2, 60, 3, 60, 2),
+          col_pad, russia_gt_1980, col_pad, usa_gt_1980, col_pad),
+  fillRow(),
+  fillRow(
+    div(id = 'insights-box',
+        h4('Summary'),
+        tags$ul(
+            tags$li("It is interesting to see the difference in rocket usage between the 2 of the most active players on the field. The USA uses many different rockets and Russia prefers to have fewer rocket types."),
+            tags$li("We can also check that the medians of rockets' lifetime increased in the last years for the USA, but for Russia, it decreased. The small number of new Russian rockets after the 80s could be the cause of this reduction."),
+            tags$li("Another thing that could draw our attention is that the mission's successes improved over the years, mainly in the USA. Russia's success rate was always high.")
+            )
+        ),
+    )
+)
+```

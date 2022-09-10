@@ -1,0 +1,69 @@
+body {
+  background-image: url("img/background.jpg");
+  background-size: cover;
+}
+
+h4 {
+    font-weight: 500;
+    margin: 0 0 5px 25px;
+    margin-bottom: 5px;
+}
+
+p {
+  color: white;
+}
+
+.navbar {
+  background-color: transparent;
+  background-image: none;
+  border: none;
+}
+
+.navbar-header {
+  text-align: center;
+  width: 100%;
+}
+
+.navbar-brand {
+  text-align: center;
+  width: 100%;
+  font-size: -webkit-xxx-large;
+  margin-left: 25px !important;
+}
+
+.navbar-author {
+  margin: 0;
+}
+
+.chart-wrapper {
+  background-color: transparent;
+  border: none;
+}
+
+.chart-title {
+  color: white;
+  border: none;
+}
+
+.shiny-text-output {
+    font-weight: 700;
+    color: white;
+    margin: 0;
+    text-align: center;
+    font-size: xx-large;
+}
+
+.subtitle {
+  text-align: center;
+  padding-left: 50px;
+}
+
+.sub-subtitle {
+  font-size: small;
+  color: white;
+}
+
+#insights-box {
+  width: 100%;
+  color: white;
+}
